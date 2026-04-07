@@ -3,10 +3,10 @@ import { NextResponse } from 'next/server';
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { message, model } = body; // Now receiving 'model' from the frontend
+    const { message, model } = body; 
 
     if (!process.env.OPENROUTER_API_KEY) {
-      return NextResponse.json({ error: "SYSTEM ERROR: API Key missing in Vercel Environment Variables." }, { status: 400 });
+      return NextResponse.json({ error: "SYSTEM ERROR: API Key missing." }, { status: 400 });
     }
 
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -18,27 +18,24 @@ export async function POST(req) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        // Use the model selected in the UI, or fallback to a free one
-        "model": model || "meta-llama/llama-3-8b-instruct:free",
+        "model": model || "meta-llama/llama-3.1-8b-instruct:free",
+        "stream": true, // NEW: This turns on real-time typing!
         "messages": [
-          { role: "system", content: "You are WellCoder, an elite AI software engineer. Provide concise, accurate coding assistance." },
+          { role: "system", content: "You are WellCoder, an elite AI software engineer." },
           { role: "user", content: message }
         ]
       })
     });
 
-    const data = await response.json();
-
-    // If OpenRouter rejects the request, throw their exact error message
-    if (!response.ok) {
-      throw new Error(data.error?.message || `OpenRouter API error: ${response.status}`);
-    }
-    
-    const aiReply = data.choices[0].message.content;
-
-    return NextResponse.json({ reply: aiReply });
+    // Pass the raw stream directly back to the frontend
+    return new Response(response.body, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
   } catch (error) {
-    console.error("API Route Error:", error);
-    return NextResponse.json({ error: error.message || "Failed to process request with OpenRouter." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to process request." }, { status: 500 });
   }
 }
