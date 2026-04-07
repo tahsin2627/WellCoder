@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { Send, FolderUp, Loader2, FileCode, MessageSquare, Code2, Settings, Terminal, Zap, ChevronDown, Check, RefreshCw, Wand2, Plus, X, Globe, Database, Paintbrush } from 'lucide-react'; // FIXED: Paintbrush instead of Paintbucket
+import { Send, FolderUp, Loader2, FileCode, MessageSquare, Code2, Settings, Terminal, Zap, ChevronDown, Check, RefreshCw, Wand2, Plus, X, Globe, Database, Paintbrush } from 'lucide-react';
 
 export default function WellCoder() {
   const [files, setFiles] = useState({ 'index.js': '// Welcome to WellCoder\n// Awaiting your command...' });
@@ -82,7 +82,6 @@ export default function WellCoder() {
     finally { setIsLoading(false); e.target.value = ''; }
   };
 
-  // --- UPGRADED: REAL-TIME STREAMING ---
   const handleSend = async (customPrompt = null, isWizard = false) => {
     const textToSend = customPrompt || input;
     if (!textToSend.trim() || isLoading) return;
@@ -118,9 +117,8 @@ export default function WellCoder() {
       
       if (!response.ok) throw new Error('Provider Error. Try switching models.');
 
-      // Prepare UI for the incoming stream
       setChat(prev => [...prev, { role: 'system', content: '' }]);
-      setIsLoading(false); // Turn off spinner, we are streaming now!
+      setIsLoading(false); 
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -140,7 +138,6 @@ export default function WellCoder() {
               const content = data.choices[0]?.delta?.content;
               if (content) {
                 aiText += content;
-                // Live update the last message bubble
                 setChat(prev => {
                   const newChat = [...prev];
                   newChat[newChat.length - 1].content = aiText;
