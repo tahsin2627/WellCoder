@@ -1,26 +1,27 @@
 'use client';
 import { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Send, FolderUp, Loader2, FileCode, Folder } from 'lucide-react';
+import { Send, FolderUp, Loader2, FileCode, Folder, MessageSquare, Code2, Settings, Terminal, Zap } from 'lucide-react';
 
 export default function WellCoder() {
+  // --- STATE ---
   const [files, setFiles] = useState({
-    'index.js': '// Welcome to WellCoder\nconsole.log("Hello from WellCoder!");',
-    'utils.js': 'export function add(a, b) {\n  return a + b;\n}',
-    'package.json': '{\n  "name": "wellcoder-project",\n  "version": "1.0.0"\n}'
+    'index.js': '// Welcome to WellCoder\n// Awaiting your command...',
   });
   const [activeFile, setActiveFile] = useState('index.js');
-  const [chat, setChat] = useState([{ role: 'system', text: 'WellCoder initialized. Select a file or give me a command.' }]);
+  const [chat, setChat] = useState([{ role: 'system', content: 'WellCoder initialized. OpenRouter integration ready. How can I help you code today?' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // NEW: Mobile View State ('chat' or 'editor')
+  const [mobileView, setMobileView] = useState('chat');
 
-  // NEW: Function to handle folder uploads
+  // --- HANDLERS ---
   const handleFileUpload = async (e) => {
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
-
     setIsLoading(true);
-    setChat((prev) => [...prev, { role: 'system', text: 'Reading files...' }]);
+    setChat((prev) => [...prev, { role: 'system', content: 'Reading project files...' }]);
 
     const newFiles = {};
     let firstFileName = null;
@@ -28,32 +29,21 @@ export default function WellCoder() {
     try {
       for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i];
-        
-        // Skip heavy folders to prevent the browser from crashing
-        if (file.webkitRelativePath.includes('node_modules') || file.webkitRelativePath.includes('.git')) {
-          continue;
-        }
-
-        // Read the file as text
+        if (file.webkitRelativePath.includes('node_modules') || file.webkitRelativePath.includes('.git')) continue;
         const text = await file.text();
         const filePath = file.webkitRelativePath || file.name;
-        
         newFiles[filePath] = text;
         if (!firstFileName) firstFileName = filePath;
       }
-
       if (Object.keys(newFiles).length > 0) {
-        setFiles(newFiles); // Replace virtual file system with uploaded files
-        setActiveFile(firstFileName); // Open the first file
-        setChat((prev) => [...prev, { role: 'system', text: `Successfully loaded ${Object.keys(newFiles).length} files into the workspace.` }]);
-      } else {
-        setChat((prev) => [...prev, { role: 'system', text: 'No readable files found (node_modules and .git are ignored).' }]);
+        setFiles(newFiles);
+        setActiveFile(firstFileName);
+        setChat((prev) => [...prev, { role: 'system', content: `Successfully loaded ${Object.keys(newFiles).length} files.` }]);
       }
     } catch (error) {
-      setChat((prev) => [...prev, { role: 'system', text: 'Error reading uploaded files.' }]);
+      setChat((prev) => [...prev, { role: 'system', content: 'Error reading uploaded files.' }]);
     } finally {
       setIsLoading(false);
-      // Reset the input so you can upload the same folder again if needed
       e.target.value = ''; 
     }
   };
@@ -62,7 +52,7 @@ export default function WellCoder() {
     if (!input.trim() || isLoading) return;
     
     const userMessage = input;
-    setChat((prev) => [...prev, { role: 'user', text: userMessage }]);
+    setChat((prev) => [...prev, { role: 'user', content: userMessage }]);
     setInput('');
     setIsLoading(true);
 
@@ -74,19 +64,16 @@ export default function WellCoder() {
       });
 
       const data = await response.json();
-      setChat((prev) => [...prev, { role: 'system', text: data.reply }]);
+      if (data.error) throw new Error(data.error);
+      
+      setChat((prev) => [...prev, { role: 'system', content: data.reply }]);
     } catch (error) {
-      setChat((prev) => [...prev, { role: 'system', text: 'Error: Could not connect to WellCoder backend.' }]);
+      setChat((prev) => [...prev, { role: 'system', content: `Error: ${error.message || 'Could not connect to OpenRouter.'}` }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEditorChange = (value) => {
-    setFiles((prev) => ({ ...prev, [activeFile]: value }));
-  };
-
-  // Helper to determine language for Monaco Editor
   const getLanguage = (fileName) => {
     if (fileName.endsWith('.json')) return 'json';
     if (fileName.endsWith('.html')) return 'html';
@@ -96,111 +83,119 @@ export default function WellCoder() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-[#0d1117] text-gray-300 font-sans">
+    <div className="flex h-screen bg-[#09090b] text-gray-300 font-sans overflow-hidden">
       
-      {/* LEFT PANEL: Chat Interface */}
-      <div className="w-full md:w-1/3 flex flex-col border-r border-gray-700 bg-[#161b22] h-[50vh] md:h-screen">
-        <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-[#010409]">
-          <h1 className="text-xl font-bold text-white tracking-wide">WellCoder</h1>
-          <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2 text-sm transition-colors">
-            <FolderUp size={16} />
-            <span className="hidden md:inline">Upload Project</span>
-            {/* NEW: onChange handler added here */}
-            <input 
-              type="file" 
-              webkitdirectory="" 
-              directory="" 
-              className="hidden" 
-              onChange={handleFileUpload}
-            />
-          </label>
-        </div>
-        
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {chat.map((msg, idx) => (
-            <div key={idx} className={`p-3 rounded-lg shadow-sm ${msg.role === 'user' ? 'bg-blue-600 text-white ml-8' : 'bg-gray-800 border border-gray-700 mr-8'}`}>
-              <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
-            </div>
-          ))}
-          {isLoading && (
-            <div className="bg-gray-800 border border-gray-700 mr-8 p-3 rounded-lg flex items-center gap-2 w-fit">
-              <Loader2 size={16} className="animate-spin text-blue-400" />
-              <span className="text-sm text-gray-400">Processing...</span>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-gray-700 bg-[#0d1117]">
-          <div className="flex gap-2">
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              disabled={isLoading}
-              placeholder="Tell WellCoder what to build..." 
-              className="flex-1 bg-[#161b22] border border-gray-600 rounded p-2.5 text-white outline-none focus:border-blue-500 transition-colors text-sm disabled:opacity-50"
-            />
-            <button 
-              onClick={handleSend} 
-              disabled={isLoading}
-              className="bg-blue-600 hover:bg-blue-700 p-2.5 rounded text-white transition-colors disabled:opacity-50"
-            >
-              <Send size={18} />
-            </button>
+      {/* PROFESSIONAL SIDEBAR (Hidden on mobile) */}
+      <div className="hidden md:flex flex-col w-16 bg-[#000000] border-r border-gray-800 items-center py-4 justify-between z-10">
+        <div className="space-y-6">
+          <div className="p-2 bg-blue-600/10 text-blue-500 rounded-xl shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+            <Zap size={24} />
           </div>
+          <button className="p-2 text-gray-500 hover:text-white transition-colors"><MessageSquare size={22} /></button>
+          <button className="p-2 text-gray-500 hover:text-white transition-colors"><Terminal size={22} /></button>
         </div>
+        <button className="p-2 text-gray-500 hover:text-white transition-colors"><Settings size={22} /></button>
       </div>
 
-      {/* RIGHT PANEL: File Explorer & Monaco Editor */}
-      <div className="flex-1 flex flex-col md:flex-row h-[50vh] md:h-screen border-t md:border-t-0 border-gray-700">
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col md:flex-row relative">
         
-        {/* File Explorer Sidebar */}
-        <div className="w-full md:w-48 bg-[#0d1117] border-r border-gray-700 flex flex-col">
-          <div className="px-4 py-2 border-b border-gray-700 bg-[#010409] text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
-            <Folder size={14} /> Workspace
+        {/* CHAT PANEL (Toggled on mobile, fixed on desktop) */}
+        <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] lg:w-[450px] flex-col border-r border-gray-800 bg-[#09090b] h-[calc(100vh-60px)] md:h-screen`}>
+          <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#000000]">
+            <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">
+              WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v1.0</span>
+            </h1>
           </div>
-          <div className="flex-1 overflow-y-auto py-2">
-            {Object.keys(files).map((fileName) => {
-              // Extract just the file name if it's a long path for a cleaner sidebar
-              const displayFileName = fileName.split('/').pop();
-              return (
-                <button
-                  key={fileName}
-                  onClick={() => setActiveFile(fileName)}
-                  title={fileName} // Hover to see full path
-                  className={`w-full text-left px-4 py-1.5 text-sm flex items-center gap-2 hover:bg-[#161b22] transition-colors truncate ${activeFile === fileName ? 'bg-[#161b22] text-blue-400 border-l-2 border-blue-500' : 'text-gray-400 border-l-2 border-transparent'}`}
-                >
-                  <FileCode size={14} className="shrink-0" />
-                  <span className="truncate">{displayFileName}</span>
-                </button>
-              )
-            })}
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {chat.map((msg, idx) => (
+              <div key={idx} className={`p-3.5 rounded-xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white ml-8 shadow-md' : 'bg-[#121214] border border-gray-800 mr-8 text-gray-200 shadow-sm'}`}>
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+              </div>
+            ))}
+            {isLoading && (
+              <div className="bg-[#121214] border border-gray-800 mr-8 p-3 rounded-xl flex items-center gap-3 w-fit shadow-sm">
+                <Loader2 size={16} className="animate-spin text-blue-400" />
+                <span className="text-sm text-gray-400 font-medium">Processing via OpenRouter...</span>
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 bg-[#000000] border-t border-gray-800">
+            <div className="flex gap-2 items-center bg-[#121214] border border-gray-700 focus-within:border-blue-500 transition-colors rounded-xl px-2 py-1 shadow-inner">
+              <input 
+                type="text" 
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                disabled={isLoading}
+                placeholder="Ask WellCoder..." 
+                className="flex-1 bg-transparent border-none p-2 text-white outline-none text-sm disabled:opacity-50"
+              />
+              <button onClick={handleSend} disabled={isLoading} className="bg-blue-600 hover:bg-blue-500 p-2 rounded-lg text-white transition-all shadow-md disabled:opacity-50 disabled:hover:bg-blue-600">
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* The Editor */}
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="px-4 py-2 border-b border-gray-700 bg-[#161b22] text-xs text-gray-400 font-mono flex items-center gap-2 truncate">
-            <span className="text-blue-400 truncate">{activeFile}</span>
+        {/* EDITOR PANEL (Toggled on mobile, fixed on desktop) */}
+        <div className={`${mobileView === 'editor' ? 'flex' : 'hidden'} md:flex flex-1 flex-col h-[calc(100vh-60px)] md:h-screen min-w-0`}>
+          
+          {/* Top Bar for Editor */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-[#000000]">
+            <div className="flex gap-2 items-center overflow-x-auto no-scrollbar">
+              {Object.keys(files).map((fileName) => {
+                const displayFileName = fileName.split('/').pop();
+                return (
+                  <button
+                    key={fileName}
+                    onClick={() => setActiveFile(fileName)}
+                    className={`px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-2 whitespace-nowrap transition-colors ${activeFile === fileName ? 'bg-[#121214] text-blue-400 border border-gray-700 shadow-sm' : 'text-gray-500 hover:text-gray-300 hover:bg-[#121214]'}`}
+                  >
+                    <FileCode size={12} /> {displayFileName}
+                  </button>
+                )
+              })}
+            </div>
+            
+            <label className="cursor-pointer bg-[#121214] hover:bg-gray-800 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition-colors shadow-sm whitespace-nowrap ml-2">
+              <FolderUp size={14} />
+              <span className="hidden sm:inline">Upload Project</span>
+              <input type="file" webkitdirectory="" directory="" className="hidden" onChange={handleFileUpload} />
+            </label>
           </div>
-          <div className="flex-1">
+
+          <div className="flex-1 bg-[#0d1117] relative">
             <Editor
               height="100%"
               language={getLanguage(activeFile)}
               theme="vs-dark"
               value={files[activeFile] || ''}
-              onChange={handleEditorChange}
-              options={{ 
-                minimap: { enabled: false }, 
-                fontSize: 14,
-                wordWrap: 'on',
-                padding: { top: 16 }
-              }}
+              onChange={(value) => setFiles((prev) => ({ ...prev, [activeFile]: value }))}
+              options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: 'on', padding: { top: 16 } }}
             />
           </div>
         </div>
+      </div>
 
+      {/* MOBILE BOTTOM NAVIGATION (Hidden on Desktop) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#000000] border-t border-gray-800 flex justify-around items-center z-50">
+        <button 
+          onClick={() => setMobileView('chat')} 
+          className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}
+        >
+          <MessageSquare size={20} />
+          <span className="text-[10px] font-medium">Chat</span>
+        </button>
+        <button 
+          onClick={() => setMobileView('editor')} 
+          className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'editor' ? 'text-blue-500' : 'text-gray-500'}`}
+        >
+          <Code2 size={20} />
+          <span className="text-[10px] font-medium">Editor</span>
+        </button>
       </div>
     </div>
   );
