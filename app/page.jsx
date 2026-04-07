@@ -1,16 +1,14 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import { Send, FolderUp, Loader2, FileCode, MessageSquare, Code2, Settings, Terminal, Zap, ChevronDown, Check, RefreshCw, Wand2, Plus, X, Globe, Database, Paintbucket } from 'lucide-react';
+import { Send, FolderUp, Loader2, FileCode, MessageSquare, Code2, Settings, Terminal, Zap, ChevronDown, Check, RefreshCw, Wand2, Plus, X, Globe, Database, Paintbrush } from 'lucide-react'; // FIXED: Paintbrush instead of Paintbucket
 
 export default function WellCoder() {
-  // --- CORE STATE ---
   const [files, setFiles] = useState({ 'index.js': '// Welcome to WellCoder\n// Awaiting your command...' });
   const [activeFile, setActiveFile] = useState('index.js');
   const [chat, setChat] = useState([]);
   const [input, setInput] = useState('');
   
-  // --- NEW: ADVANCED LOADING & UI STATES ---
   const [isLoading, setIsLoading] = useState(false);
   const [loadingText, setLoadingText] = useState('');
   const [mobileView, setMobileView] = useState('chat');
@@ -18,14 +16,7 @@ export default function WellCoder() {
   const [isAddingFile, setIsAddingFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
 
-  // Project Wizard State
-  const [wizardConfig, setWizardConfig] = useState({
-    framework: 'React / Next.js',
-    styling: 'Tailwind CSS',
-    database: 'None'
-  });
-
-  // Toast & Dropdown State
+  const [wizardConfig, setWizardConfig] = useState({ framework: 'React / Next.js', styling: 'Tailwind CSS', database: 'None' });
   const [toast, setToast] = useState(null);
   const [freeModels, setFreeModels] = useState([{ id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B (Fallback)' }]);
   const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.1-8b-instruct:free');
@@ -52,16 +43,12 @@ export default function WellCoder() {
         if (free.length > 0) {
           setFreeModels(free);
           setSelectedModel(free[0].id);
-          showToast(`Loaded ${free.length} live free models!`);
         }
       } catch (error) { showToast('Using fallback models', 'error'); }
     }
     fetchModels();
   }, []);
 
-  // --- HANDLERS ---
-  
-  // Add a new file manually
   const handleAddFile = () => {
     if (!newFileName.trim()) return setIsAddingFile(false);
     const fileName = newFileName.trim().replace(/\s+/g, '-');
@@ -95,11 +82,11 @@ export default function WellCoder() {
     finally { setIsLoading(false); e.target.value = ''; }
   };
 
+  // --- UPGRADED: REAL-TIME STREAMING ---
   const handleSend = async (customPrompt = null, isWizard = false) => {
     const textToSend = customPrompt || input;
     if (!textToSend.trim() || isLoading) return;
     
-    // Add to chat UI
     if (!customPrompt || isWizard) {
       setChat(prev => [...prev, { role: 'user', content: isWizard ? `[Wizard Triggered]: ${textToSend}` : textToSend }]);
       setInput('');
@@ -108,23 +95,19 @@ export default function WellCoder() {
     setIsLoading(true);
     let finalPromptToAI = textToSend;
 
-    // --- NEW: THE SCRAPER INTEGRATION ---
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     const urls = textToSend.match(urlRegex);
     
     if (urls && urls.length > 0) {
-      setLoadingText(`Fetching external data from ${urls[0]}...`);
+      setLoadingText(`Fetching external data...`);
       try {
         const scrapeRes = await fetch('/api/scrape', { method: 'POST', body: JSON.stringify({ url: urls[0] }) });
         const scrapeData = await scrapeRes.json();
-        if (scrapeData.content) {
-          finalPromptToAI = `The user shared this link (${urls[0]}). Here is its extracted content:\n\n${scrapeData.content}\n\nUser Request: ${textToSend}`;
-          setLoadingText('Analyzing extracted content...');
-        }
+        if (scrapeData.content) finalPromptToAI = `Context from URL:\n${scrapeData.content}\n\nUser Request: ${textToSend}`;
       } catch (err) { showToast('Failed to scrape URL', 'error'); }
-    } else {
-      setLoadingText('Drafting architecture & code...');
     }
+
+    setLoadingText('Connecting to Model...');
 
     try {
       const response = await fetch('/api/chat', {
@@ -132,24 +115,51 @@ export default function WellCoder() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: finalPromptToAI, model: selectedModel }),
       });
-      const data = await response.json();
-      if (!response.ok || data.error) throw new Error(data.error || 'API Error');
-      setChat(prev => [...prev, { role: 'system', content: data.reply }]);
+      
+      if (!response.ok) throw new Error('Provider Error. Try switching models.');
+
+      // Prepare UI for the incoming stream
+      setChat(prev => [...prev, { role: 'system', content: '' }]);
+      setIsLoading(false); // Turn off spinner, we are streaming now!
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let aiText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+            try {
+              const data = JSON.parse(line.replace('data: ', ''));
+              const content = data.choices[0]?.delta?.content;
+              if (content) {
+                aiText += content;
+                // Live update the last message bubble
+                setChat(prev => {
+                  const newChat = [...prev];
+                  newChat[newChat.length - 1].content = aiText;
+                  return newChat;
+                });
+              }
+            } catch (e) {}
+          }
+        }
+      }
     } catch (error) {
       setChat(prev => [...prev, { role: 'system', content: `Error: ${error.message}`, isError: true, originalPrompt: textToSend }]);
-    } finally {
       setIsLoading(false);
     }
   };
 
   const executeWizard = () => {
     setIsWizardOpen(false);
-    const superPrompt = `I want to build a new project. 
-    Framework: ${wizardConfig.framework}
-    Styling: ${wizardConfig.styling}
-    Database: ${wizardConfig.database}
-    Please provide the optimal folder structure, terminal commands to initialize it, and the code for the main entry files. Keep it highly professional and production-ready.`;
-    handleSend(superPrompt, true);
+    handleSend(`Build a project setup. Framework: ${wizardConfig.framework}, Styling: ${wizardConfig.styling}, DB: ${wizardConfig.database}. Give me the folder structure and code.`, true);
   };
 
   const getLanguage = (fileName) => {
@@ -163,7 +173,6 @@ export default function WellCoder() {
   return (
     <div className="flex h-screen bg-[#09090b] text-gray-300 font-sans overflow-hidden relative">
       
-      {/* TOAST NOTIFICATION */}
       {toast && (
         <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-full shadow-lg border text-sm font-medium transition-all animate-in fade-in slide-in-from-top-5
           ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-400' : 'bg-green-500/10 border-green-500/50 text-green-400'}`}>
@@ -171,7 +180,6 @@ export default function WellCoder() {
         </div>
       )}
 
-      {/* LOVABLE-STYLE PROJECT WIZARD MODAL */}
       {isWizardOpen && (
         <div className="absolute inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
           <div className="bg-[#121214] border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
@@ -179,54 +187,45 @@ export default function WellCoder() {
               <h2 className="text-xl font-bold text-white flex items-center gap-2"><Wand2 className="text-blue-500"/> New Project Wizard</h2>
               <button onClick={() => setIsWizardOpen(false)} className="text-gray-500 hover:text-white"><X size={20}/></button>
             </div>
-            
             <div className="space-y-5">
               <div>
                 <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Code2 size={14}/> Framework</label>
                 <select value={wizardConfig.framework} onChange={(e)=>setWizardConfig({...wizardConfig, framework: e.target.value})} className="w-full bg-[#09090b] border border-gray-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none">
-                  <option>React / Next.js</option><option>Vanilla HTML/JS</option><option>Vue / Nuxt</option><option>Python Flask</option>
+                  <option>React / Next.js</option><option>Vanilla HTML/JS</option><option>Python Flask</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Paintbucket size={14}/> Styling</label>
+                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Paintbrush size={14}/> Styling</label>
                 <select value={wizardConfig.styling} onChange={(e)=>setWizardConfig({...wizardConfig, styling: e.target.value})} className="w-full bg-[#09090b] border border-gray-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none">
-                  <option>Tailwind CSS</option><option>Standard CSS</option><option>Bootstrap</option>
+                  <option>Tailwind CSS</option><option>Standard CSS</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Database size={14}/> Database Backend</label>
+                <label className="text-xs text-gray-400 font-bold uppercase tracking-wider mb-2 flex items-center gap-2"><Database size={14}/> Database</label>
                 <select value={wizardConfig.database} onChange={(e)=>setWizardConfig({...wizardConfig, database: e.target.value})} className="w-full bg-[#09090b] border border-gray-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 outline-none">
-                  <option>None (Frontend Only)</option><option>Supabase</option><option>Firebase</option><option>MongoDB</option>
+                  <option>None (Frontend Only)</option><option>Supabase</option><option>Firebase</option>
                 </select>
               </div>
-              
-              <button onClick={executeWizard} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl mt-4 transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)]">
-                Generate Architecture
-              </button>
+              <button onClick={executeWizard} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl mt-4 shadow-[0_0_20px_rgba(37,99,235,0.3)]">Generate Architecture</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* PROFESSIONAL SIDEBAR */}
       <div className="hidden md:flex flex-col w-16 bg-[#000000] border-r border-gray-800 items-center py-4 justify-between z-10">
         <div className="space-y-6">
           <div className="p-2 bg-blue-600/10 text-blue-500 rounded-xl shadow-[0_0_15px_rgba(37,99,235,0.2)]"><Zap size={24} /></div>
-          <button onClick={() => setIsWizardOpen(true)} title="Project Wizard" className="p-2 text-gray-500 hover:text-blue-400 transition-colors"><Wand2 size={22} /></button>
+          <button onClick={() => setIsWizardOpen(true)} className="p-2 text-gray-500 hover:text-blue-400 transition-colors"><Wand2 size={22} /></button>
           <button className="p-2 text-gray-500 hover:text-white transition-colors"><MessageSquare size={22} /></button>
         </div>
         <button className="p-2 text-gray-500 hover:text-white transition-colors"><Settings size={22} /></button>
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col md:flex-row relative">
-        
-        {/* CHAT PANEL */}
         <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] lg:w-[450px] flex-col border-r border-gray-800 bg-[#09090b] h-[calc(100vh-60px)] md:h-screen`}>
-          
           <div className="p-4 border-b border-gray-800 flex flex-col gap-3 bg-[#000000] relative z-50">
             <div className="flex justify-between items-center">
-              <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v2.0</span></h1>
+              <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v2.1 Stream</span></h1>
               <button onClick={() => setIsWizardOpen(true)} className="md:hidden text-blue-400 bg-blue-500/10 p-1.5 rounded-md"><Wand2 size={16}/></button>
             </div>
             
@@ -259,14 +258,13 @@ export default function WellCoder() {
             
             {chat.map((msg, idx) => (
               <div key={idx} className={`p-3.5 rounded-xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white ml-8 shadow-md' : msg.isError ? 'bg-red-500/10 border border-red-500/30 mr-8 text-red-200' : 'bg-[#121214] border border-gray-800 mr-8 text-gray-200 shadow-sm'}`}>
-                <p className="whitespace-pre-wrap font-mono text-[13px]">{msg.content}</p>
+                <p className="whitespace-pre-wrap font-mono text-[13px]">{msg.content || '...'}</p>
                 {msg.isError && (
                   <button onClick={() => handleSend(msg.originalPrompt)} className="mt-3 flex items-center gap-1.5 text-xs bg-red-500/20 hover:bg-red-500/30 text-red-300 px-3 py-1.5 rounded-md transition-colors"><RefreshCw size={12} /> Retry</button>
                 )}
               </div>
             ))}
             
-            {/* NEW: ADVANCED AGENTIC LOADING STATE */}
             {isLoading && (
               <div className="bg-[#121214] border border-gray-800 mr-8 p-3 rounded-xl flex items-center gap-3 w-fit shadow-sm">
                 <Loader2 size={16} className="animate-spin text-blue-400" />
@@ -283,19 +281,14 @@ export default function WellCoder() {
           </div>
         </div>
 
-        {/* EDITOR PANEL WITH DYNAMIC FILE SYSTEM */}
         <div className={`${mobileView === 'editor' ? 'flex' : 'hidden'} md:flex flex-1 flex-col h-[calc(100vh-60px)] md:h-screen min-w-0`}>
           <div className="flex items-center justify-between px-2 py-2 border-b border-gray-800 bg-[#000000]">
-            
-            {/* Dynamic File Tabs */}
             <div className="flex gap-1 items-center overflow-x-auto custom-scrollbar flex-1 mr-2">
               {Object.keys(files).map((fileName) => (
                 <button key={fileName} onClick={() => setActiveFile(fileName)} className={`px-3 py-1.5 text-xs font-mono rounded-md flex items-center gap-2 whitespace-nowrap transition-colors ${activeFile === fileName ? 'bg-[#121214] text-blue-400 border border-gray-700' : 'text-gray-500 hover:text-gray-300 hover:bg-[#121214]'}`}>
                   <FileCode size={12} /> {fileName.split('/').pop()}
                 </button>
               ))}
-              
-              {/* Add File Button / Input */}
               {isAddingFile ? (
                 <div className="flex items-center gap-1 ml-2 bg-[#121214] border border-blue-500 rounded-md px-2 py-1">
                   <input type="text" value={newFileName} onChange={(e)=>setNewFileName(e.target.value)} onKeyDown={(e)=> e.key === 'Enter' && handleAddFile()} placeholder="script.js" autoFocus className="bg-transparent text-xs text-white outline-none w-20 font-mono" />
@@ -303,37 +296,23 @@ export default function WellCoder() {
                   <button onClick={() => setIsAddingFile(false)} className="text-gray-500 hover:text-red-400"><X size={14}/></button>
                 </div>
               ) : (
-                <button onClick={() => setIsAddingFile(true)} className="ml-2 px-2 py-1.5 text-gray-500 hover:text-blue-400 hover:bg-[#121214] rounded-md transition-colors flex items-center gap-1 text-xs font-mono">
-                  <Plus size={14}/> File
-                </button>
+                <button onClick={() => setIsAddingFile(true)} className="ml-2 px-2 py-1.5 text-gray-500 hover:text-blue-400 hover:bg-[#121214] rounded-md transition-colors flex items-center gap-1 text-xs font-mono"><Plus size={14}/> File</button>
               )}
             </div>
-            
             <label className="cursor-pointer bg-[#121214] hover:bg-gray-800 border border-gray-700 text-gray-300 px-3 py-1.5 rounded-lg flex items-center gap-2 text-xs font-medium transition-colors shadow-sm whitespace-nowrap shrink-0">
-              <FolderUp size={14} />
-              <span className="hidden sm:inline">Upload</span>
+              <FolderUp size={14} /><span className="hidden sm:inline">Upload</span>
               <input type="file" webkitdirectory="" directory="" className="hidden" onChange={handleFileUpload} />
             </label>
           </div>
-
           <div className="flex-1 bg-[#0d1117] relative">
             <Editor height="100%" language={getLanguage(activeFile)} theme="vs-dark" value={files[activeFile] || ''} onChange={(value) => setFiles(prev => ({ ...prev, [activeFile]: value }))} options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: 'on', padding: { top: 16 } }} />
           </div>
         </div>
       </div>
-
-      {/* MOBILE BOTTOM NAVIGATION */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#000000] border-t border-gray-800 flex justify-around items-center z-50">
-        <button onClick={() => setMobileView('chat')} className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}>
-          <MessageSquare size={20} />
-          <span className="text-[10px] font-medium">Chat</span>
-        </button>
-        <button onClick={() => setMobileView('editor')} className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'editor' ? 'text-blue-500' : 'text-gray-500'}`}>
-          <Code2 size={20} />
-          <span className="text-[10px] font-medium">Editor</span>
-        </button>
+        <button onClick={() => setMobileView('chat')} className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}><MessageSquare size={20} /><span className="text-[10px] font-medium">Chat</span></button>
+        <button onClick={() => setMobileView('editor')} className={`flex flex-col items-center gap-1 p-2 ${mobileView === 'editor' ? 'text-blue-500' : 'text-gray-500'}`}><Code2 size={20} /><span className="text-[10px] font-medium">Editor</span></button>
       </div>
-      
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
