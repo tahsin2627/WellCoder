@@ -9,12 +9,13 @@ export default function WellCoder() {
     'index.js': '// Welcome to WellCoder\n// Awaiting your command...',
   });
   const [activeFile, setActiveFile] = useState('index.js');
-  const [chat, setChat] = useState([{ role: 'system', content: 'WellCoder initialized. OpenRouter integration ready. How can I help you code today?' }]);
+  const [chat, setChat] = useState([{ role: 'system', content: 'WellCoder initialized. OpenRouter integration ready. Select a model and send a command.' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // NEW: Mobile View State ('chat' or 'editor')
   const [mobileView, setMobileView] = useState('chat');
+  
+  // NEW: Model Selection State
+  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3-8b-instruct:free');
 
   // --- HANDLERS ---
   const handleFileUpload = async (e) => {
@@ -60,15 +61,19 @@ export default function WellCoder() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        // NEW: Send the selected model to our backend API
+        body: JSON.stringify({ message: userMessage, model: selectedModel }),
       });
 
       const data = await response.json();
-      if (data.error) throw new Error(data.error);
+      
+      if (!response.ok || data.error) {
+        throw new Error(data.error || 'Unknown error occurred');
+      }
       
       setChat((prev) => [...prev, { role: 'system', content: data.reply }]);
     } catch (error) {
-      setChat((prev) => [...prev, { role: 'system', content: `Error: ${error.message || 'Could not connect to OpenRouter.'}` }]);
+      setChat((prev) => [...prev, { role: 'system', content: `Error: ${error.message}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -85,7 +90,7 @@ export default function WellCoder() {
   return (
     <div className="flex h-screen bg-[#09090b] text-gray-300 font-sans overflow-hidden">
       
-      {/* PROFESSIONAL SIDEBAR (Hidden on mobile) */}
+      {/* PROFESSIONAL SIDEBAR */}
       <div className="hidden md:flex flex-col w-16 bg-[#000000] border-r border-gray-800 items-center py-4 justify-between z-10">
         <div className="space-y-6">
           <div className="p-2 bg-blue-600/10 text-blue-500 rounded-xl shadow-[0_0_15px_rgba(37,99,235,0.2)]">
@@ -100,12 +105,34 @@ export default function WellCoder() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col md:flex-row relative">
         
-        {/* CHAT PANEL (Toggled on mobile, fixed on desktop) */}
+        {/* CHAT PANEL */}
         <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] lg:w-[450px] flex-col border-r border-gray-800 bg-[#09090b] h-[calc(100vh-60px)] md:h-screen`}>
-          <div className="p-4 border-b border-gray-800 flex justify-between items-center bg-[#000000]">
-            <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">
-              WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v1.0</span>
-            </h1>
+          
+          {/* HEADER WITH MODEL SELECTOR */}
+          <div className="p-4 border-b border-gray-800 flex flex-col gap-3 bg-[#000000]">
+            <div className="flex justify-between items-center">
+              <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">
+                WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v1.1</span>
+              </h1>
+            </div>
+            
+            {/* The Dropdown */}
+            <select 
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="w-full bg-[#121214] text-xs text-gray-300 border border-gray-800 rounded-lg px-3 py-2 outline-none focus:border-blue-500 transition-colors shadow-sm cursor-pointer"
+            >
+              <optgroup label="Free Models">
+                <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
+                <option value="google/gemma-7b-it:free">Google Gemma 7B (Free)</option>
+              </optgroup>
+              <optgroup label="Pro Models (Require Credits)">
+                <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
+                <option value="anthropic/claude-3-sonnet">Claude 3.5 Sonnet</option>
+                <option value="anthropic/claude-3-opus">Claude 3 Opus</option>
+                <option value="openai/gpt-4o">OpenAI GPT-4o</option>
+              </optgroup>
+            </select>
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -140,10 +167,8 @@ export default function WellCoder() {
           </div>
         </div>
 
-        {/* EDITOR PANEL (Toggled on mobile, fixed on desktop) */}
+        {/* EDITOR PANEL */}
         <div className={`${mobileView === 'editor' ? 'flex' : 'hidden'} md:flex flex-1 flex-col h-[calc(100vh-60px)] md:h-screen min-w-0`}>
-          
-          {/* Top Bar for Editor */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-[#000000]">
             <div className="flex gap-2 items-center overflow-x-auto no-scrollbar">
               {Object.keys(files).map((fileName) => {
@@ -180,7 +205,7 @@ export default function WellCoder() {
         </div>
       </div>
 
-      {/* MOBILE BOTTOM NAVIGATION (Hidden on Desktop) */}
+      {/* MOBILE BOTTOM NAVIGATION */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 h-[60px] bg-[#000000] border-t border-gray-800 flex justify-around items-center z-50">
         <button 
           onClick={() => setMobileView('chat')} 
