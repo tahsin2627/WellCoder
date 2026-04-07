@@ -1,23 +1,52 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { Send, FolderUp, Loader2, FileCode, Folder, MessageSquare, Code2, Settings, Terminal, Zap } from 'lucide-react';
 
 export default function WellCoder() {
-  // --- STATE ---
   const [files, setFiles] = useState({
     'index.js': '// Welcome to WellCoder\n// Awaiting your command...',
   });
   const [activeFile, setActiveFile] = useState('index.js');
-  const [chat, setChat] = useState([{ role: 'system', content: 'WellCoder initialized. OpenRouter integration ready. Select a model and send a command.' }]);
+  const [chat, setChat] = useState([{ role: 'system', content: 'WellCoder initialized. Fetching live OpenRouter models...' }]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [mobileView, setMobileView] = useState('chat');
   
-  // NEW: Model Selection State
-  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3-8b-instruct:free');
+  // NEW: State to hold our dynamically fetched free models
+  const [freeModels, setFreeModels] = useState([
+    { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'Llama 3.1 8B (Fallback)' }
+  ]);
+  const [selectedModel, setSelectedModel] = useState('meta-llama/llama-3.1-8b-instruct:free');
 
-  // --- HANDLERS ---
+  // NEW: The React equivalent of your Python script!
+  useEffect(() => {
+    async function fetchModels() {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/models");
+        const data = await response.json();
+        
+        // Filter exactly like your Python script
+        const free = data.data.filter(m => 
+          m.pricing && 
+          Number(m.pricing.prompt) === 0 && 
+          Number(m.pricing.completion) === 0
+        );
+
+        if (free.length > 0) {
+          setFreeModels(free);
+          // Auto-select the first available free model to ensure it's valid
+          setSelectedModel(free[0].id);
+          setChat((prev) => [...prev, { role: 'system', content: `Success: Loaded ${free.length} live free models from OpenRouter.` }]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch models", error);
+        setChat((prev) => [...prev, { role: 'system', content: 'Warning: Could not fetch live models. Using fallback list.' }]);
+      }
+    }
+    fetchModels();
+  }, []); // The empty array means this runs exactly once when the app loads
+
   const handleFileUpload = async (e) => {
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
@@ -61,7 +90,6 @@ export default function WellCoder() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // NEW: Send the selected model to our backend API
         body: JSON.stringify({ message: userMessage, model: selectedModel }),
       });
 
@@ -108,28 +136,30 @@ export default function WellCoder() {
         {/* CHAT PANEL */}
         <div className={`${mobileView === 'chat' ? 'flex' : 'hidden'} md:flex w-full md:w-[400px] lg:w-[450px] flex-col border-r border-gray-800 bg-[#09090b] h-[calc(100vh-60px)] md:h-screen`}>
           
-          {/* HEADER WITH MODEL SELECTOR */}
+          {/* HEADER WITH AUTO-FETCHING MODEL SELECTOR */}
           <div className="p-4 border-b border-gray-800 flex flex-col gap-3 bg-[#000000]">
             <div className="flex justify-between items-center">
               <h1 className="text-lg font-semibold text-white tracking-wide flex items-center gap-2">
-                WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v1.1</span>
+                WellCoder <span className="text-[10px] bg-blue-600/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">v1.3</span>
               </h1>
             </div>
             
-            {/* The Dropdown */}
+            {/* Dynamic Dropdown */}
             <select 
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full bg-[#121214] text-xs text-gray-300 border border-gray-800 rounded-lg px-3 py-2 outline-none focus:border-blue-500 transition-colors shadow-sm cursor-pointer"
+              className="w-full bg-[#121214] text-xs text-gray-300 border border-gray-800 rounded-lg px-3 py-2 outline-none focus:border-blue-500 transition-colors shadow-sm cursor-pointer appearance-none"
             >
-              <optgroup label="Free Models">
-                <option value="meta-llama/llama-3-8b-instruct:free">Llama 3 8B (Free)</option>
-                <option value="google/gemma-7b-it:free">Google Gemma 7B (Free)</option>
+              <optgroup label={`Live Free Models (${freeModels.length})`}>
+                {freeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
               </optgroup>
               <optgroup label="Pro Models (Require Credits)">
+                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                 <option value="anthropic/claude-3-haiku">Claude 3 Haiku</option>
-                <option value="anthropic/claude-3-sonnet">Claude 3.5 Sonnet</option>
-                <option value="anthropic/claude-3-opus">Claude 3 Opus</option>
                 <option value="openai/gpt-4o">OpenAI GPT-4o</option>
               </optgroup>
             </select>
