@@ -9,13 +9,3 @@ module.exports = {
   },
   plugins: [],
 }
-
-2. Create PostCSS Configuration
- * Path: postcss.config.js
- * Action: Create file, paste the code, and commit.
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-}
