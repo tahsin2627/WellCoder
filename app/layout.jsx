@@ -1,14 +1,16 @@
-import './globals.css'
+import './globals.css';
 
 export const metadata = {
-  title: 'WellCoder | AI Agent IDE',
-  description: 'Your personal AI software engineer.',
-}
+  title: 'WellCoder | AI Assistant',
+  description: 'Your real-time AI coding assistant',
+};
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className="bg-gray-950 text-gray-100 antialiased min-h-screen flex flex-col">
+        {children}
+      </body>
     </html>
-  )
+  );
 }
